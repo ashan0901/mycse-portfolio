@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
-import { BarChart3, Briefcase, Building2, DollarSign, Home, Landmark, Menu, Settings, Wallet } from "lucide-react";
+import { BarChart3, Briefcase, Building2, DollarSign, Home, Landmark, LogOut, Menu, Settings, Wallet } from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 
@@ -44,13 +45,28 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
+  const router = useRouter();
+  const supabase = createClient();
+
+  async function handleLogout(closeNav?: () => void) {
+    closeNav?.();
+    await supabase.auth.signOut();
+    router.push("/login");
+    router.refresh();
+  }
 
   return (
     <div className="min-h-screen bg-background md:flex">
-      <aside className="hidden w-64 shrink-0 border-r bg-card md:sticky md:top-0 md:block md:h-screen md:overflow-y-auto">
-        <div className="p-5">
+      <aside className="hidden w-64 shrink-0 border-r bg-card md:sticky md:top-0 md:flex md:h-screen md:flex-col md:overflow-y-auto">
+        <div className="flex-1 p-5">
           <h1 className="mb-6 text-lg font-semibold tracking-tight">CSE Portfolio</h1>
           <NavLinks />
+        </div>
+        <div className="border-t p-4">
+          <Button type="button" variant="ghost" className="w-full justify-start gap-3 text-muted-foreground hover:text-foreground" onClick={() => handleLogout()}>
+            <LogOut className="h-4 w-4 shrink-0" />
+            Log out
+          </Button>
         </div>
       </aside>
 
@@ -60,12 +76,18 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <SheetTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Open navigation" />}>
               <Menu className="h-5 w-5" />
             </SheetTrigger>
-            <SheetContent side="left" className="w-[min(85vw,20rem)] p-0">
+            <SheetContent side="left" className="flex w-[min(85vw,20rem)] flex-col p-0">
               <SheetHeader className="border-b pr-12">
                 <SheetTitle>CSE Portfolio</SheetTitle>
               </SheetHeader>
-              <div className="overflow-y-auto p-4">
+              <div className="flex-1 overflow-y-auto p-4">
                 <NavLinks onNavigate={() => setOpen(false)} />
+              </div>
+              <div className="border-t p-4">
+                <Button type="button" variant="ghost" className="w-full justify-start gap-3 text-muted-foreground hover:text-foreground" onClick={() => handleLogout(() => setOpen(false))}>
+                  <LogOut className="h-4 w-4 shrink-0" />
+                  Log out
+                </Button>
               </div>
             </SheetContent>
           </Sheet>

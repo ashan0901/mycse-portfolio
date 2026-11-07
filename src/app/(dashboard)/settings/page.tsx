@@ -8,14 +8,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 type Theme = "light" | "dark";
 
 export default function SettingsPage() {
-  const [theme, setTheme] = useState<Theme>(() => {
-    if (typeof window === "undefined") return "light";
-    return localStorage.getItem("theme") === "dark" ? "dark" : "light";
-  });
+  const [theme, setTheme] = useState<Theme>("light");
 
   useEffect(() => {
-    document.documentElement.classList.toggle("dark", theme === "dark");
-  }, [theme]);
+    const stored = localStorage.getItem("theme");
+    const next: Theme = stored === "dark" ? "dark" : "light";
+    setTheme(next);
+    document.documentElement.classList.toggle("dark", next === "dark");
+  }, []);
 
   function setMode(next: Theme) {
     setTheme(next);
