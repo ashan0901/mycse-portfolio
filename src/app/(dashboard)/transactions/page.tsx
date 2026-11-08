@@ -2,9 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { toast } from "sonner";
 import { transactionService } from "@/services/transaction.service";
 import { money } from "@/lib/decimal";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -34,6 +36,7 @@ const date = (value?: string) => {
 export default function TransactionsPage() {
   const [rows, setRows] = useState<TransactionRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [removingId, setRemovingId] = useState<string | null>(null);
 
   useEffect(() => {
     transactionService
@@ -41,6 +44,24 @@ export default function TransactionsPage() {
       .then((data) => setRows((data as TransactionRow[]) ?? []))
       .finally(() => setLoading(false));
   }, []);
+
+  async function handleRemove(r: TransactionRow) {
+    const label = `${r.transaction_type ?? "Transaction"} ${r.companies?.ticker ?? ""}`.trim();
+    const ok = window.confirm(
+      `Remove ${label}? This permanently deletes the transaction record and will affect portfolio holdings, realized P&L, cash balance, analytics, and reports that use it.`
+    );
+    if (!ok) return;
+    setRemovingId(r.id);
+    try {
+      await transactionService.remove(r.id);
+      setRows((prev) => prev.filter((x) => x.id !== r.id));
+      toast.success("Transaction removed.");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not remove transaction.");
+    } finally {
+      setRemovingId(null);
+    }
+  }
 
   const totals = useMemo(() => {
     const buys = rows.filter((r) => r.transaction_type === "BUY");
@@ -98,7 +119,7 @@ export default function TransactionsPage() {
       <Card className="overflow-hidden">
         <CardHeader className="border-b">
           <CardTitle>Transaction History</CardTitle>
-          <CardDescription>Amounts and fees are shown as recorded. Use Edit to update a record.</CardDescription>
+          <CardDescription>Amounts and fees are shown as recorded. Edit updates a record; Remove permanently deletes it and recalculates dependent views from remaining data.</CardDescription>
         </CardHeader>
         <CardContent className="p-0">
           {loading ? (
@@ -125,7 +146,7 @@ export default function TransactionsPage() {
                   <TableHead className="text-right">Fees</TableHead>
                   <TableHead className="text-right">Net</TableHead>
                   <TableHead className="text-right">P&amp;L</TableHead>
-                  <TableHead className="px-4 text-right">Action</TableHead>
+                  <TableHead className="px-4 text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -158,9 +179,21 @@ export default function TransactionsPage() {
                         {pnl == null ? <span className="text-muted-foreground">—</span> : money(pnl)}
                       </TableCell>
                       <TableCell className="px-4 text-right">
-                        <Link href={editHref} className="border-input bg-background hover:bg-accent hover:text-accent-foreground inline-flex h-8 items-center justify-center rounded-md border px-3 text-sm font-medium shadow-xs">
-                          Edit
-                        </Link>
+                        <div className="flex justify-end gap-2">
+                          <Link href={editHref} className="border-input bg-background hover:bg-accent hover:text-accent-foreground inline-flex h-8 items-center justify-center rounded-md border px-3 text-sm font-medium shadow-xs">
+                            Edit
+                          </Link>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="text-destructive hover:text-destructive"
+                            disabled={removingId === r.id}
+                            onClick={() => handleRemove(r)}
+                          >
+                            {removingId === r.id ? "Removing…" : "Remove"}
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   );
