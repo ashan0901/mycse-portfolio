@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
-import { BarChart3, Briefcase, Building2, DollarSign, Home, Landmark, LogOut, Menu, Settings, Wallet } from "lucide-react";
+import { BarChart3, Briefcase, Building2, DollarSign, Home, Landmark, LogOut, Menu, Settings, TrendingUp, Wallet } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
@@ -11,6 +11,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/co
 const nav = [
   { href: "/dashboard", label: "Dashboard", icon: Home },
   { href: "/portfolio", label: "Portfolio", icon: Briefcase },
+  { href: "/predict", label: "Predict Profit/Loss", icon: TrendingUp },
   { href: "/transactions", label: "Transactions", icon: DollarSign },
   { href: "/cds", label: "CDS / Cash", icon: Landmark },
   { href: "/buy", label: "Buy", icon: Wallet },
