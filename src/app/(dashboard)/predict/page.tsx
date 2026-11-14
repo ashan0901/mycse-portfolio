@@ -1,9 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { transactionService } from "@/services/transaction.service";
+import { cseService } from "@/services/cse.service";
 import { D, money, round } from "@/lib/decimal";
+import type { PriceQuote } from "@/types";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -21,6 +24,8 @@ type Holding = {
 type TxRow = {
   company_id?: string;
   transaction_type?: string;
+  transaction_date?: string;
+  created_at?: string;
   quantity?: number | string;
   net_amount?: number | string;
   companies?: { ticker?: string; company_name?: string } | null;
@@ -28,6 +33,11 @@ type TxRow = {
 
 const qty = (value: number) => new Intl.NumberFormat("en-LK", { maximumFractionDigits: 4 }).format(value);
 const pct = (value: number) => `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
+const norm = (s: string) => s.trim().toUpperCase().split(".")[0];
+const clock = (ms?: number) =>
+  ms ? new Date(ms).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : "";
+
+const QUOTE_REFRESH_MS = 30000;
 
 type RunningHolding = {
   companyId: string;
@@ -45,6 +55,11 @@ export default function PredictPage() {
   const [quantity, setQuantity] = useState("");
   const [fees, setFees] = useState("");
   const [feesTouched, setFeesTouched] = useState(false);
+  const [quote, setQuote] = useState<PriceQuote | null>(null);
+  const [quoteLoading, setQuoteLoading] = useState(false);
+  const [quoteError, setQuoteError] = useState<string | null>(null);
+  const [priceTouched, setPriceTouched] = useState(false);
+  const priceTouchedRef = useRef(false);
   const rate = Number(process.env.NEXT_PUBLIC_FEE_RATE || 0.0112);
 
   useEffect(() => {
@@ -53,7 +68,13 @@ export default function PredictPage() {
       try {
         const txs = (await transactionService.list()) as unknown as TxRow[];
         const grouped = new Map<string, RunningHolding>();
-        for (const t of txs ?? []) {
+        const ordered = [...((txs as unknown as TxRow[]) ?? [])].sort((a, b) => {
+          const da = String(a.transaction_date ?? "");
+          const db = String(b.transaction_date ?? "");
+          if (da !== db) return da.localeCompare(db);
+          return String(a.created_at ?? "").localeCompare(String(b.created_at ?? ""));
+        });
+        for (const t of ordered) {
           const id = String(t.company_id ?? "");
           if (!id) continue;
           const entry = grouped.get(id) ?? {
@@ -102,6 +123,55 @@ export default function PredictPage() {
   }, []);
 
   const selected = holdings.find((h) => h.companyId === companyId) ?? null;
+  const ticker = selected ? norm(selected.ticker) : "";
+  const hasTicker = Boolean(ticker) && ticker !== "—";
+
+  useEffect(() => {
+    if (!hasTicker) {
+      setQuote(null);
+      setQuoteError(selected ? `No CSE ticker for ${selected.name || "this holding"}.` : null);
+      return;
+    }
+    let active = true;
+    setQuoteLoading(true);
+    (async () => {
+      try {
+        const res = await cseService.quotes([ticker]);
+        if (!active) return;
+        const next = res.quotes[ticker] ?? null;
+        setQuote(next);
+        setQuoteError(res.error ?? (next ? null : `No CSE price found for ${ticker}.`));
+        if (next && !priceTouchedRef.current) setSellPrice(String(next.price));
+      } catch (err) {
+        if (active) {
+          setQuote(null);
+          setQuoteError(err instanceof Error ? err.message : "Could not fetch the CSE price.");
+        }
+      } finally {
+        if (active) setQuoteLoading(false);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [hasTicker, selected, ticker]);
+
+  useEffect(() => {
+    if (!hasTicker) return;
+    const id = setInterval(async () => {
+      if (typeof document !== "undefined" && document.hidden) return;
+      try {
+        const res = await cseService.quotes([ticker]);
+        const next = res.quotes[ticker] ?? null;
+        setQuote(next);
+        setQuoteError(res.error ?? (next ? null : `No CSE price found for ${ticker}.`));
+        if (next && !priceTouchedRef.current) setSellPrice(String(next.price));
+      } catch {
+        // keep the last known quote when a background refresh fails
+      }
+    }, QUOTE_REFRESH_MS);
+    return () => clearInterval(id);
+  }, [hasTicker, ticker]);
 
   const gross = useMemo(() => {
     const q = Number(quantity || 0);
@@ -123,11 +193,23 @@ export default function PredictPage() {
   }, [quantity, sellPrice, gross, feeValue, selected]);
 
   function selectCompany(id: string) {
+    priceTouchedRef.current = false;
+    setPriceTouched(false);
     setCompanyId(id);
     const holding = holdings.find((h) => h.companyId === id);
     setQuantity(holding ? String(holding.remaining) : "");
     setFees("");
     setFeesTouched(false);
+    setSellPrice("");
+    setQuote(null);
+    setQuoteError(null);
+  }
+
+  function useLivePrice() {
+    if (!quote) return;
+    priceTouchedRef.current = false;
+    setPriceTouched(false);
+    setSellPrice(String(quote.price));
   }
 
   if (loading) {
@@ -185,6 +267,26 @@ export default function PredictPage() {
                     </option>
                   ))}
                 </select>
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/30 px-3 py-2 text-sm">
+                  <span className="flex flex-wrap items-center gap-2">
+                    <Badge variant="secondary">CSE price</Badge>
+                    <span className="font-medium tabular-nums">
+                      {quoteLoading && !quote ? "Fetching…" : quote ? money(quote.price) : "—"}
+                    </span>
+                    {quote ? (
+                      <span className={`text-xs tabular-nums ${quote.changePercentage < 0 ? "text-destructive" : ""}`}>
+                        {pct(quote.changePercentage)}
+                        {quote.lastTradedTime ? ` · ${clock(quote.lastTradedTime)}` : ""}
+                      </span>
+                    ) : null}
+                  </span>
+                  {quote ? (
+                    <Button type="button" variant="outline" size="sm" onClick={useLivePrice}>
+                      Use live price
+                    </Button>
+                  ) : null}
+                </div>
+                {quoteError ? <p className="text-xs text-muted-foreground">{quoteError}</p> : null}
               </div>
 
               {selected ? (
@@ -215,8 +317,15 @@ export default function PredictPage() {
                     inputMode="decimal"
                     placeholder="0.00"
                     value={sellPrice}
-                    onChange={(e) => setSellPrice(e.target.value)}
+                    onChange={(e) => {
+                      priceTouchedRef.current = true;
+                      setPriceTouched(true);
+                      setSellPrice(e.target.value);
+                    }}
                   />
+                  <p className="text-xs text-muted-foreground">
+                    {priceTouched ? "Manual price — CSE updates will not overwrite it." : "Auto-filled from the latest CSE price."}
+                  </p>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="predict-qty">Share amount</Label>

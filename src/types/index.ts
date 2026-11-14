@@ -27,3 +27,27 @@ export interface CashMovement {
   updated_at: string;
 }
 
+export interface PriceQuote {
+  symbol: string;
+  name: string;
+  price: number;
+  previousClose: number;
+  change: number;
+  changePercentage: number;
+  high: number;
+  low: number;
+  open: number;
+  volume: number;
+  turnover: number;
+  marketCap: number;
+  lastTradedTime: number;
+}
+
+export interface PricesResponse {
+  updatedAt: number;
+  status: string | null;
+  quotes: Record<string, PriceQuote>;
+  missing: string[];
+  error?: string;
+}
+
