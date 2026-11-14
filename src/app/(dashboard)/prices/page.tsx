@@ -32,6 +32,7 @@ type TxRow = {
 };
 
 const REFRESH_MS = 30000;
+const FEE_RATE = Number(process.env.NEXT_PUBLIC_FEE_RATE || 0.0112);
 
 const qty = (value: number) => new Intl.NumberFormat("en-LK", { maximumFractionDigits: 4 }).format(value);
 const norm = (s: string) => s.trim().toUpperCase().split(".")[0];
@@ -134,22 +135,27 @@ export default function PricesPage() {
       const key = norm(c.ticker ?? "");
       const quote: PriceQuote | undefined = data?.quotes[key];
       const holding = holdings[c.id];
-      const marketValue = quote && holding ? quote.price * holding.remaining : 0;
-      const unrealized = holding ? marketValue - holding.cost : 0;
-      const unrealizedPct = holding && holding.cost > 0 ? (unrealized / holding.cost) * 100 : 0;
-      return { company: c, quote, holding, marketValue, unrealized, unrealizedPct };
+      const grossValue = quote && holding ? quote.price * holding.remaining : 0;
+      const costBasis = holding ? holding.avgCost * holding.remaining : 0;
+      const fees = grossValue * FEE_RATE;
+      const netValue = grossValue - fees;
+      const unrealized = quote && holding ? netValue - costBasis : 0;
+      const unrealizedPct = costBasis > 0 ? (unrealized / costBasis) * 100 : 0;
+      return { company: c, quote, holding, grossValue, costBasis, fees, netValue, unrealized, unrealizedPct };
     });
   }, [companies, data, holdings]);
 
   const totals = useMemo(() => {
     let marketValue = 0;
     let cost = 0;
+    let unrealized = 0;
     for (const r of rows) {
       if (!r.holding || !r.quote) continue;
-      marketValue += r.marketValue;
-      cost += r.holding.cost;
+      marketValue += r.grossValue;
+      cost += r.costBasis;
+      unrealized += r.unrealized;
     }
-    return { marketValue, cost, unrealized: marketValue - cost };
+    return { marketValue, cost, unrealized };
   }, [rows]);
 
   const status = data?.status ?? null;
@@ -212,13 +218,13 @@ export default function PricesPage() {
             </Card>
             <Card className="gap-3 py-4">
               <CardHeader className="pb-0">
-                <CardDescription>Holding market value</CardDescription>
+                <CardDescription>Holding value (gross)</CardDescription>
                 <CardTitle className="text-2xl">{money(totals.marketValue)}</CardTitle>
               </CardHeader>
             </Card>
             <Card className="gap-3 py-4">
               <CardHeader className="pb-0">
-                <CardDescription>Unrealized P&amp;L</CardDescription>
+                <CardDescription>Unrealized P&amp;L (net)</CardDescription>
                 <CardTitle className={`text-2xl ${totals.unrealized < 0 ? "text-destructive" : ""}`}>{money(totals.unrealized)}</CardTitle>
               </CardHeader>
             </Card>
@@ -247,7 +253,7 @@ export default function PricesPage() {
             <CardHeader className="border-b">
               <CardTitle>Live quotes</CardTitle>
               <CardDescription>
-                {data ? `Last fetched ${clock(data.updatedAt)}` : "Waiting for first fetch…"} Prices are LKR, in the CSE session.
+                {data ? `Last fetched ${clock(data.updatedAt)}` : "Waiting for first fetch…"} Prices are LKR, in the CSE session. Unrealized P&amp;L is net of an estimated {(FEE_RATE * 100).toFixed(2)}% selling fee.
               </CardDescription>
             </CardHeader>
             <CardContent className="p-0">
@@ -264,8 +270,9 @@ export default function PricesPage() {
                       <TableHead className="text-right">Day low</TableHead>
                       <TableHead className="text-right">Volume</TableHead>
                       <TableHead className="text-right">Holding</TableHead>
-                      <TableHead className="text-right">Value</TableHead>
-                      <TableHead className="px-4 text-right">Unrealized P&amp;L</TableHead>
+                      <TableHead className="text-right">Gross value</TableHead>
+                      <TableHead className="text-right">Est. fees</TableHead>
+                      <TableHead className="px-4 text-right">Unrealized P&amp;L (net)</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -297,7 +304,8 @@ export default function PricesPage() {
                           <TableCell className="text-right tabular-nums text-muted-foreground">{q ? money(q.low) : "—"}</TableCell>
                           <TableCell className="text-right tabular-nums text-muted-foreground">{q ? qty(q.volume) : "—"}</TableCell>
                           <TableCell className="text-right tabular-nums">{r.holding ? qty(r.holding.remaining) : "—"}</TableCell>
-                          <TableCell className="text-right tabular-nums">{r.holding && q ? money(r.marketValue) : "—"}</TableCell>
+                          <TableCell className="text-right tabular-nums">{r.holding && q ? money(r.grossValue) : "—"}</TableCell>
+                          <TableCell className="text-right tabular-nums">{r.holding && q ? money(r.fees) : "—"}</TableCell>
                           <TableCell
                             className={`px-4 text-right tabular-nums font-medium ${
                               !r.holding ? "" : r.unrealized > 0 ? "text-emerald-600 dark:text-emerald-400" : r.unrealized < 0 ? "text-destructive" : ""
