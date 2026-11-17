@@ -10,7 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 
 type Holding = { name: string; value: number };
-type Stats = { invested: number; realized: number; cash: CashSummary };
+type Stats = { invested: number; realized: number; holdingsCost: number; cash: CashSummary };
 
 export default function DashboardPage() {
   const [holdings, setHoldings] = useState<Holding[]>([]);
@@ -20,30 +20,36 @@ export default function DashboardPage() {
   useEffect(() => {
     (async () => {
       try {
-        const [companies, txs, cash] = await Promise.all([companyService.list(), transactionService.list(), cashService.summary()]);
-        let invested = 0;
-        let realized = 0;
-        const h: Holding[] = [];
-        for (const c of companies) {
-          let qty = 0;
-          let cost = 0;
-          const cTxs = (txs as Array<Record<string, unknown>>).filter((t) => t.company_id === c.id);
-          for (const t of cTxs) {
-            if (t.transaction_type === "BUY") {
-              qty += Number(t.quantity || 0);
-              cost += Number(t.net_amount || 0);
-              invested += Number(t.net_amount || 0);
-            } else {
-              const alloc = qty > 0 ? (cost * Number(t.quantity || 0)) / qty : 0;
-              qty -= Number(t.quantity || 0);
-              cost -= alloc;
-              realized += Number(t.realized_profit_loss || 0);
-            }
-          }
-          if (qty > 0) h.push({ name: c.ticker, value: Number(cost.toFixed(2)) });
-        }
-        setHoldings(h);
-        setStats({ invested, realized, cash });
+         const [companies, txs, cash] = await Promise.all([companyService.list(), transactionService.list(), cashService.summary()]);
+         let invested = 0;
+         let realized = 0;
+         let holdingsCost = 0;
+         const h: Holding[] = [];
+         for (const c of companies) {
+           let qty = 0;
+           let cost = 0;
+           const cTxs = (txs as Array<Record<string, unknown>>)
+             .filter((t) => t.company_id === c.id)
+             .sort((a, b) => String(a.transaction_date ?? "").localeCompare(String(b.transaction_date ?? "")));
+           for (const t of cTxs) {
+             if (t.transaction_type === "BUY") {
+               qty += Number(t.quantity || 0);
+               cost += Number(t.net_amount || 0);
+               invested += Number(t.net_amount || 0);
+             } else {
+               const alloc = qty > 0 ? (cost * Number(t.quantity || 0)) / qty : 0;
+               qty -= Number(t.quantity || 0);
+               cost -= alloc;
+               realized += Number(t.realized_profit_loss || 0);
+             }
+           }
+           if (qty > 0) {
+             h.push({ name: c.ticker, value: Number(cost.toFixed(2)) });
+             holdingsCost += cost;
+           }
+         }
+         setHoldings(h);
+         setStats({ invested, realized, holdingsCost, cash });
       } finally {
         setLoading(false);
       }
@@ -72,6 +78,12 @@ export default function DashboardPage() {
           <CardHeader className="pb-0">
             <CardDescription>Total invested</CardDescription>
             <CardTitle className="text-2xl">{loading || !stats ? "—" : money(stats.invested)}</CardTitle>
+          </CardHeader>
+        </Card>
+        <Card className="gap-3 py-4">
+          <CardHeader className="pb-0">
+            <CardDescription>Holdings cost basis</CardDescription>
+            <CardTitle className="text-2xl">{loading || !stats ? "—" : money(stats.holdingsCost)}</CardTitle>
           </CardHeader>
         </Card>
         <Card className="gap-3 py-4">
