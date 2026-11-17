@@ -51,3 +51,21 @@ export interface PricesResponse {
   error?: string;
 }
 
+export interface Candle {
+  time: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+  change: number | null;
+  changePct: number | null;
+}
+
+export interface ChartResponse {
+  symbol: string;
+  period: number;
+  updatedAt: number;
+  candles: Candle[];
+}
+
